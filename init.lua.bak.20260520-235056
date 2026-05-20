@@ -1,0 +1,6 @@
+-- Enable IPC for CLI access
+require("hs.ipc")
+
+-- Load RightOptionMacro spoon
+--hs.loadSpoon("RightOptionMacro")
+--spoon.RightOptionMacro:start()
