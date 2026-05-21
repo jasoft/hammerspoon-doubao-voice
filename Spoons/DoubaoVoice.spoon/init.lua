@@ -21,6 +21,8 @@ obj.config = {
     voicePanelPopUpDelay = 0.3,
     restoreImeDelay = 0.3,
     activateSound = "Funk",
+    switchRetryCount = 3,
+    switchRetryDelay = 0.1,
 }
 
 -- 物理按键 keycode
@@ -30,6 +32,8 @@ local KEYCODE_RIGHT_OPT = 61
 local LOG_DOUBLE_TAP_START = "模拟双击左 Option"
 local LOG_DOUBLE_TAP_DONE = "双击左 Option 完成"
 local LOG_SWITCH_IME = "切换到: %s, 结果: %s"
+local LOG_SWITCH_VERIFY = "验证输入法: 当前=%s, 目标=%s"
+local LOG_SWITCH_RETRY = "输入法未就绪，重试 %d/%d"
 local LOG_RIGHT_OPT_DOWN = "右Option按下"
 local LOG_RIGHT_OPT_UP = "右Option松开，按住 %.3f 秒"
 local LOG_LONG_PRESS_TRIGGERED = "长按已触发，松开时单击左Option关闭豆包语音"
@@ -62,10 +66,31 @@ function obj:doubleTapLeftOption()
     end)
 end
 
-function obj:switchToInput(source)
+function obj:switchToInput(source, retryCount)
+    retryCount = retryCount or 0
+
     local ok = hs.keycodes.setMethod(source)
     log.df(LOG_SWITCH_IME, source, tostring(ok))
-    return ok
+
+    if not ok then return false end
+
+    -- 验证是否真的切换成功
+    local current = hs.keycodes.currentMethod()
+    log.df(LOG_SWITCH_VERIFY, tostring(current), source)
+
+    if current == source then
+        return true
+    end
+
+    -- 切换未生效，重试
+    if retryCount < self.config.switchRetryCount then
+        log.df(LOG_SWITCH_RETRY, retryCount + 1, self.config.switchRetryCount)
+        hs.timer.doAfter(self.config.switchRetryDelay, function()
+            self:switchToInput(source, retryCount + 1)
+        end)
+    end
+
+    return false
 end
 
 function obj:onRightOptDown()
@@ -104,8 +129,9 @@ function obj:checkLongPress()
         longPressTriggered = true
         log.df(LOG_LONG_PRESS_DETECT, holdDuration)
 
-        self:switchToInput(self.config.targetInputSource)
+        local switchOk = self:switchToInput(self.config.targetInputSource)
 
+        -- 无论切换是否立即成功，都延迟执行双击（重试会在后台进行）
         hs.timer.doAfter(self.config.imeReadyDelay, function()
             self:doubleTapLeftOption()
         end)
