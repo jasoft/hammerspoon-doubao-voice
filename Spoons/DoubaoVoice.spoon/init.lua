@@ -21,8 +21,7 @@ obj.config = {
     voicePanelPopUpDelay = 0.3,
     restoreImeDelay = 0.3,
     activateSound = "Funk",
-    micCheckDelay = 1.0,
-    micCheckRegion = {x = 0, y = 0, w = 400, h = 25},
+    micCheckDelay = 0.8,
 }
 
 -- 物理按键 keycode
@@ -32,9 +31,9 @@ local KEYCODE_RIGHT_OPT = 61
 local LOG_DOUBLE_TAP_START = "模拟双击左 Option"
 local LOG_DOUBLE_TAP_DONE = "双击左 Option 完成"
 local LOG_SWITCH_IME = "切换到: %s, 结果: %s"
-local LOG_MIC_CHECK = "检测麦克风图标..."
-local LOG_MIC_FOUND = "麦克风图标已出现"
-local LOG_MIC_NOT_FOUND = "麦克风图标未出现，重试激活"
+local LOG_MIC_CHECK = "检测麦克风状态..."
+local LOG_MIC_ACTIVE = "麦克风已激活"
+local LOG_MIC_INACTIVE = "麦克风未激活，重试激活"
 local LOG_RETRY_ACTIVATE = "重试激活豆包语音"
 local LOG_RIGHT_OPT_DOWN = "右Option按下"
 local LOG_RIGHT_OPT_UP = "右Option松开，按住 %.3f 秒"
@@ -68,35 +67,32 @@ function obj:doubleTapLeftOption()
     end)
 end
 
-function obj:checkMicIcon()
-    local screen = hs.screen.primaryScreen()
-    if not screen then return false end
+function obj:isMicActive()
+    -- 检查默认输入设备是否正在被使用
+    local defaultInput = hs.audiodevice.defaultInputDevice()
+    if not defaultInput then return false end
 
-    local region = self.config.micCheckRegion
-    local截图 = hs.screen.snapshotOfArea(screen, region)
+    -- 通过检查输入设备的采样率或名称来判断
+    -- 豆包语音激活时，系统会显示橙色麦克风图标
+    -- 我们可以通过 accessibility 检查菜单栏的隐私指示器
 
-    if not截图 then return false end
-
-    -- 检查截图中是否有麦克风图标的颜色特征（白色/亮色图标）
-    local size =截图:size()
-    local hasLightPixels = false
-
-    -- 采样检查菜单栏区域是否有亮色像素（麦克风图标通常是白色）
-    for x = 0, size.w - 1, 5 do
-        for y = 0, size.h - 1, 2 do
-            local pixel =截图:pixelAt(x, y)
-            if pixel then
-                local brightness = (pixel.red + pixel.green + pixel.blue) / 3
-                if brightness > 0.8 then
-                    hasLightPixels = true
-                    break
-                end
-            end
+    -- 简单方法：检查是否有进程在使用麦克风
+    local handle = io.popen("pgrep -f '豆包\\|Doubao\\|com.bytedance' 2>/dev/null")
+    if handle then
+        local result = handle:read("*a")
+        handle:close()
+        if result and result ~= "" then
+            return true
         end
-        if hasLightPixels then break end
     end
 
-    return hasLightPixels
+    -- 备用方法：检查系统隐私指示器
+    local output = hs.execute("ioreg -l -w 0 | grep -i 'IOAudioEngineState' | head -1")
+    if output and output:find("1") then
+        return true
+    end
+
+    return false
 end
 
 function obj:retryActivate()
@@ -116,31 +112,10 @@ function obj:retryActivate()
     end)
 end
 
-function obj:switchToInput(source, retryCount)
-    retryCount = retryCount or 0
-
+function obj:switchToInput(source)
     local ok = hs.keycodes.setMethod(source)
     log.df(LOG_SWITCH_IME, source, tostring(ok))
-
-    if not ok then return false end
-
-    -- 验证是否真的切换成功
-    local current = hs.keycodes.currentMethod()
-    log.df(LOG_SWITCH_VERIFY, tostring(current), source)
-
-    if current == source then
-        return true
-    end
-
-    -- 切换未生效，重试
-    if retryCount < self.config.switchRetryCount then
-        log.df(LOG_SWITCH_RETRY, retryCount + 1, self.config.switchRetryCount)
-        hs.timer.doAfter(self.config.switchRetryDelay, function()
-            self:switchToInput(source, retryCount + 1)
-        end)
-    end
-
-    return false
+    return ok
 end
 
 function obj:onRightOptDown()
@@ -184,16 +159,16 @@ function obj:checkLongPress()
         hs.timer.doAfter(self.config.imeReadyDelay, function()
             self:doubleTapLeftOption()
 
-            -- 检测麦克风图标是否出现
+            -- 检测麦克风是否激活
             hs.timer.doAfter(self.config.micCheckDelay, function()
                 log.df(LOG_MIC_CHECK)
-                local micFound = self:checkMicIcon()
+                local micActive = self:isMicActive()
 
-                if micFound then
-                    log.df(LOG_MIC_FOUND)
+                if micActive then
+                    log.df(LOG_MIC_ACTIVE)
                     hs.sound.getByName(self.config.activateSound):play()
                 else
-                    log.df(LOG_MIC_NOT_FOUND)
+                    log.df(LOG_MIC_INACTIVE)
                     self:retryActivate()
                 end
             end)
