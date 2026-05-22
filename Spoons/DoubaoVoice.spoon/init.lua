@@ -17,11 +17,12 @@ obj.config = {
     defaultInputSource = "微信输入法",
     longPressThreshold = 0.25,
     optionDoubleTapInterval = 0.18,
-    imeReadyDelay = 0.2,
+    imeReadyDelay = 0.1,
     voicePanelPopUpDelay = 0.3,
     restoreImeDelay = 0.3,
     activateSound = "Funk",
-    micCheckDelay = 0.8,
+    switchRetryCount = 3,
+    switchRetryDelay = 0.1,
 }
 
 -- 物理按键 keycode
@@ -31,10 +32,8 @@ local KEYCODE_RIGHT_OPT = 61
 local LOG_DOUBLE_TAP_START = "模拟双击左 Option"
 local LOG_DOUBLE_TAP_DONE = "双击左 Option 完成"
 local LOG_SWITCH_IME = "切换到: %s, 结果: %s"
-local LOG_MIC_CHECK = "检测麦克风状态..."
-local LOG_MIC_ACTIVE = "麦克风已激活"
-local LOG_MIC_INACTIVE = "麦克风未激活，重试激活"
-local LOG_RETRY_ACTIVATE = "重试激活豆包语音"
+local LOG_SWITCH_VERIFY = "验证输入法: 当前=%s, 目标=%s"
+local LOG_SWITCH_RETRY = "输入法未就绪，重试 %d/%d"
 local LOG_RIGHT_OPT_DOWN = "右Option按下"
 local LOG_RIGHT_OPT_UP = "右Option松开，按住 %.3f 秒"
 local LOG_LONG_PRESS_TRIGGERED = "长按已触发，松开时单击左Option关闭豆包语音"
@@ -67,55 +66,31 @@ function obj:doubleTapLeftOption()
     end)
 end
 
-function obj:isMicActive()
-    -- 检查默认输入设备是否正在被使用
-    local defaultInput = hs.audiodevice.defaultInputDevice()
-    if not defaultInput then return false end
+function obj:switchToInput(source, retryCount)
+    retryCount = retryCount or 0
 
-    -- 通过检查输入设备的采样率或名称来判断
-    -- 豆包语音激活时，系统会显示橙色麦克风图标
-    -- 我们可以通过 accessibility 检查菜单栏的隐私指示器
+    local ok = hs.keycodes.setMethod(source)
+    log.df(LOG_SWITCH_IME, source, tostring(ok))
 
-    -- 简单方法：检查是否有进程在使用麦克风
-    local handle = io.popen("pgrep -f '豆包\\|Doubao\\|com.bytedance' 2>/dev/null")
-    if handle then
-        local result = handle:read("*a")
-        handle:close()
-        if result and result ~= "" then
-            return true
-        end
-    end
+    if not ok then return false end
 
-    -- 备用方法：检查系统隐私指示器
-    local output = hs.execute("ioreg -l -w 0 | grep -i 'IOAudioEngineState' | head -1")
-    if output and output:find("1") then
+    -- 验证是否真的切换成功
+    local current = hs.keycodes.currentMethod()
+    log.df(LOG_SWITCH_VERIFY, tostring(current), source)
+
+    if current == source then
         return true
     end
 
-    return false
-end
-
-function obj:retryActivate()
-    log.df(LOG_RETRY_ACTIVATE)
-
-    -- 切回默认输入法
-    self:switchToInput(self.config.defaultInputSource)
-
-    -- 等待一下再切回豆包
-    hs.timer.doAfter(0.3, function()
-        self:switchToInput(self.config.targetInputSource)
-
-        -- 再等待后双击
-        hs.timer.doAfter(self.config.imeReadyDelay, function()
-            self:doubleTapLeftOption()
+    -- 切换未生效，重试
+    if retryCount < self.config.switchRetryCount then
+        log.df(LOG_SWITCH_RETRY, retryCount + 1, self.config.switchRetryCount)
+        hs.timer.doAfter(self.config.switchRetryDelay, function()
+            self:switchToInput(source, retryCount + 1)
         end)
-    end)
-end
+    end
 
-function obj:switchToInput(source)
-    local ok = hs.keycodes.setMethod(source)
-    log.df(LOG_SWITCH_IME, source, tostring(ok))
-    return ok
+    return false
 end
 
 function obj:onRightOptDown()
@@ -125,6 +100,9 @@ function obj:onRightOptDown()
     rightOptDownTime = hs.timer.absoluteTime()
     longPressTriggered = false
     log.df(LOG_RIGHT_OPT_DOWN)
+
+    -- 按下立即开始切换输入法，减少等待时间
+    self:switchToInput(self.config.targetInputSource)
 end
 
 function obj:onRightOptUp()
@@ -154,24 +132,13 @@ function obj:checkLongPress()
         longPressTriggered = true
         log.df(LOG_LONG_PRESS_DETECT, holdDuration)
 
-        self:switchToInput(self.config.targetInputSource)
-
+        -- 输入法已在按下时切换，这里只需延迟执行双击
         hs.timer.doAfter(self.config.imeReadyDelay, function()
             self:doubleTapLeftOption()
+        end)
 
-            -- 检测麦克风是否激活
-            hs.timer.doAfter(self.config.micCheckDelay, function()
-                log.df(LOG_MIC_CHECK)
-                local micActive = self:isMicActive()
-
-                if micActive then
-                    log.df(LOG_MIC_ACTIVE)
-                    hs.sound.getByName(self.config.activateSound):play()
-                else
-                    log.df(LOG_MIC_INACTIVE)
-                    self:retryActivate()
-                end
-            end)
+        hs.timer.doAfter(self.config.voicePanelPopUpDelay, function()
+            hs.sound.getByName(self.config.activateSound):play()
         end)
     end
 end
