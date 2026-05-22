@@ -21,8 +21,8 @@ obj.config = {
     voicePanelPopUpDelay = 0.3,
     restoreImeDelay = 0.3,
     activateSound = "Funk",
-    switchRetryCount = 3,
-    switchRetryDelay = 0.1,
+    micCheckDelay = 1.0,
+    micCheckRegion = {x = 0, y = 0, w = 400, h = 25},
 }
 
 -- 物理按键 keycode
@@ -32,8 +32,10 @@ local KEYCODE_RIGHT_OPT = 61
 local LOG_DOUBLE_TAP_START = "模拟双击左 Option"
 local LOG_DOUBLE_TAP_DONE = "双击左 Option 完成"
 local LOG_SWITCH_IME = "切换到: %s, 结果: %s"
-local LOG_SWITCH_VERIFY = "验证输入法: 当前=%s, 目标=%s"
-local LOG_SWITCH_RETRY = "输入法未就绪，重试 %d/%d"
+local LOG_MIC_CHECK = "检测麦克风图标..."
+local LOG_MIC_FOUND = "麦克风图标已出现"
+local LOG_MIC_NOT_FOUND = "麦克风图标未出现，重试激活"
+local LOG_RETRY_ACTIVATE = "重试激活豆包语音"
 local LOG_RIGHT_OPT_DOWN = "右Option按下"
 local LOG_RIGHT_OPT_UP = "右Option松开，按住 %.3f 秒"
 local LOG_LONG_PRESS_TRIGGERED = "长按已触发，松开时单击左Option关闭豆包语音"
@@ -63,6 +65,54 @@ function obj:doubleTapLeftOption()
     hs.timer.doAfter(self.config.optionDoubleTapInterval, function()
         self:tapLeftOptionOnce()
         log.df(LOG_DOUBLE_TAP_DONE)
+    end)
+end
+
+function obj:checkMicIcon()
+    local screen = hs.screen.primaryScreen()
+    if not screen then return false end
+
+    local region = self.config.micCheckRegion
+    local截图 = hs.screen.snapshotOfArea(screen, region)
+
+    if not截图 then return false end
+
+    -- 检查截图中是否有麦克风图标的颜色特征（白色/亮色图标）
+    local size =截图:size()
+    local hasLightPixels = false
+
+    -- 采样检查菜单栏区域是否有亮色像素（麦克风图标通常是白色）
+    for x = 0, size.w - 1, 5 do
+        for y = 0, size.h - 1, 2 do
+            local pixel =截图:pixelAt(x, y)
+            if pixel then
+                local brightness = (pixel.red + pixel.green + pixel.blue) / 3
+                if brightness > 0.8 then
+                    hasLightPixels = true
+                    break
+                end
+            end
+        end
+        if hasLightPixels then break end
+    end
+
+    return hasLightPixels
+end
+
+function obj:retryActivate()
+    log.df(LOG_RETRY_ACTIVATE)
+
+    -- 切回默认输入法
+    self:switchToInput(self.config.defaultInputSource)
+
+    -- 等待一下再切回豆包
+    hs.timer.doAfter(0.3, function()
+        self:switchToInput(self.config.targetInputSource)
+
+        -- 再等待后双击
+        hs.timer.doAfter(self.config.imeReadyDelay, function()
+            self:doubleTapLeftOption()
+        end)
     end)
 end
 
@@ -129,15 +179,24 @@ function obj:checkLongPress()
         longPressTriggered = true
         log.df(LOG_LONG_PRESS_DETECT, holdDuration)
 
-        local switchOk = self:switchToInput(self.config.targetInputSource)
+        self:switchToInput(self.config.targetInputSource)
 
-        -- 无论切换是否立即成功，都延迟执行双击（重试会在后台进行）
         hs.timer.doAfter(self.config.imeReadyDelay, function()
             self:doubleTapLeftOption()
-        end)
 
-        hs.timer.doAfter(self.config.voicePanelPopUpDelay, function()
-            hs.sound.getByName(self.config.activateSound):play()
+            -- 检测麦克风图标是否出现
+            hs.timer.doAfter(self.config.micCheckDelay, function()
+                log.df(LOG_MIC_CHECK)
+                local micFound = self:checkMicIcon()
+
+                if micFound then
+                    log.df(LOG_MIC_FOUND)
+                    hs.sound.getByName(self.config.activateSound):play()
+                else
+                    log.df(LOG_MIC_NOT_FOUND)
+                    self:retryActivate()
+                end
+            end)
         end)
     end
 end
