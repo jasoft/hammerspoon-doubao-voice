@@ -13,11 +13,12 @@ obj.license = "MIT"
 
 -- 配置参数（可通过 obj.config 覆盖）
 obj.config = {
+    enableImeSwitch = false,  -- 暂时禁用输入法切换，豆包输入法切换有问题
     targetInputSource = "豆包输入法",
     defaultInputSource = "微信输入法",
     longPressThreshold = 0,
     optionDoubleTapInterval = 0.05,
-    imeReadyDelay = 0.05,
+    imeReadyDelay = 0.1,
     voicePanelPopUpDelay = 0.3,
     restoreImeDelay = 0.3,
     activateSound = "Funk",
@@ -101,8 +102,10 @@ function obj:onRightOptDown()
     longPressTriggered = false
     log.df(LOG_RIGHT_OPT_DOWN)
 
-    -- 按下立即开始切换输入法，减少等待时间
-    self:switchToInput(self.config.targetInputSource)
+    -- 按下立即开始切换输入法（如启用）
+    if self.config.enableImeSwitch then
+        self:switchToInput(self.config.targetInputSource)
+    end
 end
 
 function obj:onRightOptUp()
@@ -116,9 +119,11 @@ function obj:onRightOptUp()
         log.df(LOG_LONG_PRESS_TRIGGERED)
         self:tapLeftOptionOnce()
 
-        hs.timer.doAfter(self.config.restoreImeDelay, function()
-            self:switchToInput(self.config.defaultInputSource)
-        end)
+        if self.config.enableImeSwitch then
+            hs.timer.doAfter(self.config.restoreImeDelay, function()
+                self:switchToInput(self.config.defaultInputSource)
+            end)
+        end
     else
         log.df(LOG_SHORT_PRESS)
     end
@@ -184,7 +189,9 @@ function obj:safeEventHandler(event)
 end
 
 function obj:start()
-    self:switchToInput(self.config.defaultInputSource)
+    if self.config.enableImeSwitch then
+        self:switchToInput(self.config.defaultInputSource)
+    end
 
     self.watcher = hs.eventtap.new(
         {hs.eventtap.event.types.flagsChanged},
