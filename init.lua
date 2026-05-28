@@ -1,5 +1,3 @@
-hs.loadSpoon("DoubaoVoice")
-spoon.DoubaoVoice:start()
 
 hs.loadSpoon("ReloadConfiguration")
 spoon.ReloadConfiguration:start()
@@ -7,6 +5,7 @@ spoon.ReloadConfiguration:start()
 -- 按下 / 切换到 ABC 输入法（仅无修饰键时触发），空格时切回原输入法
 local slashLog = hs.logger.new("SlashToABC", "debug")
 local ABC_INPUT_SOURCE = "ABC"
+local FALLBACK_INPUT_METHOD = "com.bytedance.inputmethod.doubaoime.pinyin"
 local switchedBySlash = false
 
 -- 缓存上次使用的非 ABC 输入法（启动时和运行中持续更新）
@@ -53,12 +52,9 @@ _G.slashWatcher = hs.eventtap.new({hs.eventtap.event.types.keyDown}, function(ev
     -- 空格键（keycode 49）且由 slash 触发过切换，切回原输入法
     if keycode == 49 and switchedBySlash then
         switchedBySlash = false
-        if lastInputMethod then
-            slashLog.df("检测到空格，切回: %s", tostring(lastInputMethod))
-            hs.keycodes.setMethod(lastInputMethod)
-        else
-            slashLog.w("无缓存输入法，跳过切回")
-        end
+        local target = lastInputMethod or FALLBACK_INPUT_METHOD
+        slashLog.df("检测到空格，切回: %s", target)
+        hs.keycodes.setMethod(target)
     end
 
     return false
