@@ -5,11 +5,38 @@ spoon.ReloadConfiguration:start()
 -- 按下 / 切换到 ABC 输入法（仅无修饰键时触发），空格时切回原输入法
 local slashLog = hs.logger.new("SlashToABC", "debug")
 local ABC_INPUT_SOURCE = "ABC"
-local FALLBACK_INPUT_METHOD = "com.bytedance.inputmethod.doubaoime.pinyin"
+local FALLBACK_INPUT_METHOD = "豆包输入法"
 local switchedBySlash = false
+local SWITCH_RETRY_COUNT = 3
+local SWITCH_RETRY_DELAY = 0.1
 
 -- 缓存上次使用的非 ABC 输入法（启动时和运行中持续更新）
 local lastInputMethod = nil
+
+-- 切换输入法并验证，失败则重试（参考 DoubaoVoice.spoon）
+local function switchToInput(source, retryCount)
+    retryCount = retryCount or 0
+    local ok = hs.keycodes.setMethod(source)
+    slashLog.df("setMethod(%s) = %s", source, tostring(ok))
+
+    if not ok then return false end
+
+    local current = hs.keycodes.currentMethod()
+    if current == source then
+        return true
+    end
+
+    if retryCount < SWITCH_RETRY_COUNT then
+        slashLog.df("输入法未就绪，重试 %d/%d", retryCount + 1, SWITCH_RETRY_COUNT)
+        hs.timer.doAfter(SWITCH_RETRY_DELAY, function()
+            switchToInput(source, retryCount + 1)
+        end)
+    else
+        slashLog.w("切换失败，已达最大重试次数")
+    end
+
+    return false
+end
 
 -- 初始化：读取当前输入法
 do
@@ -52,13 +79,9 @@ _G.slashWatcher = hs.eventtap.new({hs.eventtap.event.types.keyDown}, function(ev
     -- 空格键（keycode 49）且由 slash 触发过切换，切回原输入法
     if keycode == 49 and switchedBySlash then
         switchedBySlash = false
-        if lastInputMethod then
-            slashLog.df("检测到空格，切回: %s", lastInputMethod)
-            hs.keycodes.setMethod(lastInputMethod)
-        else
-            slashLog.df("检测到空格，fallback 切回豆包: %s", FALLBACK_INPUT_METHOD)
-            hs.keycodes.currentSourceID(FALLBACK_INPUT_METHOD)
-        end
+        local target = lastInputMethod or FALLBACK_INPUT_METHOD
+        slashLog.df("检测到空格，切回: %s", target)
+        switchToInput(target)
     end
 
     return false
