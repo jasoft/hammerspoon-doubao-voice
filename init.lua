@@ -52,9 +52,13 @@ _G.slashWatcher = hs.eventtap.new({hs.eventtap.event.types.keyDown}, function(ev
     -- 空格键（keycode 49）且由 slash 触发过切换，切回原输入法
     if keycode == 49 and switchedBySlash then
         switchedBySlash = false
-        local target = lastInputMethod or FALLBACK_INPUT_METHOD
-        slashLog.df("检测到空格，切回: %s", target)
-        hs.keycodes.setMethod(target)
+        if lastInputMethod then
+            slashLog.df("检测到空格，切回: %s", lastInputMethod)
+            hs.keycodes.setMethod(lastInputMethod)
+        else
+            slashLog.df("检测到空格，fallback 切回豆包: %s", FALLBACK_INPUT_METHOD)
+            hs.keycodes.currentSourceID(FALLBACK_INPUT_METHOD)
+        end
     end
 
     return false
