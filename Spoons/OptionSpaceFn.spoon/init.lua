@@ -90,6 +90,16 @@ function obj:triggerSequence(callback)
         hs.alert.show(string.format("Option+Space -> (%.2fs) -> Fn", self.config.delay))
     end
 
+    local binPath = "/Users/weiwang/.local/bin/option-space-fn"
+    if hs.fs.attributes(binPath) then
+        local t = hs.task.new(binPath, function(exitCode, stdOut, stdErr)
+            log.df("option-space-fn 任务完成, exitCode=%d", exitCode)
+            if callback then callback() end
+        end, {"-d", tostring(self.config.delay)})
+        t:start()
+        return
+    end
+
     self:pressOptionSpace(function()
         hs.timer.doAfter(self.config.delay, function()
             self:pressFn(callback)
