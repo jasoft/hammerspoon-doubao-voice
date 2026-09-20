@@ -95,3 +95,24 @@ _G.slashWatcher = hs.eventtap.new({hs.eventtap.event.types.keyDown}, function(ev
 end)
 _G.slashWatcher:start()
 slashLog.i("SlashToABC 已启动")
+
+-- 按下 F13 执行 obsidian-typeless-diary
+local diaryLog = hs.logger.new("ObsidianDiary", "info")
+local DIARY_SCRIPT = "/Users/weiwang/.local/bin/obsidian-typeless-diary"
+
+_G.f13DiaryHotkey = hs.hotkey.bind({}, "f13", function()
+    diaryLog.i("F13 按下，执行 " .. DIARY_SCRIPT)
+    local task = hs.task.new(DIARY_SCRIPT, function(exitCode, stdOut, stdErr)
+        if exitCode ~= 0 then
+            diaryLog.ef("执行失败 (code %d): %s", exitCode, stdErr or "")
+        else
+            diaryLog.df("执行成功: %s", stdOut or "")
+        end
+    end)
+
+    local env = task:environment()
+    env["PATH"] = "/Users/weiwang/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:" .. (env["PATH"] or "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin")
+    task:setEnvironment(env)
+    task:start()
+end)
+diaryLog.i("F13 -> obsidian-typeless-diary 热键已注册")
