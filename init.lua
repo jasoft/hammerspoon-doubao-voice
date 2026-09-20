@@ -5,6 +5,8 @@ spoon.ReloadConfiguration:start()
 
 -- 按下 Option + 空格，停留 0.1 秒，再按下 Fn
 hs.loadSpoon("OptionSpaceFn")
+-- 由 Karabiner DriverKit 驱动接管物理 Option+空格 -> 延时 0.1 秒触发硬件级 Fn
+spoon.OptionSpaceFn.config.listenOptionSpace = false
 spoon.OptionSpaceFn:start()
 
 -- 按下 / 切换到 ABC 输入法（仅无修饰键时触发），空格时切回原输入法
