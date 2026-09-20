@@ -1,11 +1,16 @@
 
+require("hs.ipc")
 hs.loadSpoon("ReloadConfiguration")
 spoon.ReloadConfiguration:start()
+
+-- 按下 Option + 空格，停留 0.1 秒，再按下 Fn
+hs.loadSpoon("OptionSpaceFn")
+spoon.OptionSpaceFn:start()
 
 -- 按下 / 切换到 ABC 输入法（仅无修饰键时触发），空格时切回原输入法
 local slashLog = hs.logger.new("SlashToABC", "debug")
 local ABC_INPUT_SOURCE = "ABC"
-local FALLBACK_INPUT_METHOD = "豆包输入法"
+local FALLBACK_INPUT_METHOD = " 微信输入法"
 local switchedBySlash = false
 local SWITCH_RETRY_COUNT = 3
 local SWITCH_RETRY_DELAY = 0.1
